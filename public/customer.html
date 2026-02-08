@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Customer Menu</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="/styles.css">
+</head>
+
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="brand">
+        <h1>Customer Menu</h1>
+        <p>Select items → enter table number → place order</p>
+      </div>
+      <a class="btn" href="/kitchen.html">Open Kitchen →</a>
+    </div>
+
+    <div class="grid">
+      <!-- Menu -->
+      <div class="card pad">
+        <p class="section-title">Menu</p>
+        <div id="menu" class="menu"></div>
+      </div>
+
+      <!-- Cart -->
+      <div class="card pad">
+        <p class="section-title">Cart</p>
+
+        <label class="small">Table Number</label>
+        <input id="tableNumber" class="input" placeholder="e.g., 12" />
+
+        <div id="cart" style="margin-top:12px;"></div>
+
+        <div class="total">
+          <span>Total</span>
+          <b>₹<span id="total">0</span></b>
+        </div>
+
+        <button id="placeOrder" class="btn primary block" style="margin-top:12px;">
+          Place Order
+        </button>
+
+        <p id="msg" class="msg"></p>
+      </div>
+    </div>
+  </div>
+
+<script>
+  let menu = [];
+  const cart = new Map(); // id -> {id,name,price,qty}
+
+  function renderMenu() {
+    const el = document.getElementById("menu");
+    el.innerHTML = "";
+
+    for (const item of menu) {
+      const card = document.createElement("div");
+      card.className = "card item";
+      card.innerHTML = `
+        <div class="item-top">
+          <div>
+            <h3>${item.name}</h3>
+            <div class="meta">Freshly prepared</div>
+          </div>
+          <div class="price">₹${item.price}</div>
+        </div>
+        <button class="btn success">Add to cart</button>
+      `;
+      card.querySelector("button").onclick = () => addToCart(item);
+      el.appendChild(card);
+    }
+  }
+
+  function addToCart(item) {
+    const existing = cart.get(item.id);
+    if (existing) existing.qty += 1;
+    else cart.set(item.id, { ...item, qty: 1 });
+    renderCart();
+  }
+
+  function changeQty(id, delta) {
+    const it = cart.get(id);
+    if (!it) return;
+    it.qty += delta;
+    if (it.qty <= 0) cart.delete(id);
+    renderCart();
+  }
+
+  function renderCart() {
+    const el = document.getElementById("cart");
+    el.innerHTML = "";
+
+    let total = 0;
+    for (const it of cart.values()) {
+      total += it.price * it.qty;
+
+      const row = document.createElement("div");
+      row.className = "cart-row";
+      row.innerHTML = `
+        <div class="cart-left">
+          <div class="cart-name">${it.name}</div>
+          <div class="cart-sub">₹${it.price} each</div>
+        </div>
+        <div class="qty">
+          <button class="btn">-</button>
+          <span class="pill">${it.qty}</span>
+          <button class="btn">+</button>
+        </div>
+      `;
+
+      const [minusBtn, plusBtn] = row.querySelectorAll("button");
+      minusBtn.onclick = () => changeQty(it.id, -1);
+      plusBtn.onclick = () => changeQty(it.id, +1);
+
+      el.appendChild(row);
+    }
+
+    document.getElementById("total").textContent = total;
+  }
+
+  async function loadMenu() {
+    const res = await fetch("/api/menu");
+    menu = await res.json();
+    renderMenu();
+  }
+
+  document.getElementById("placeOrder").onclick = async () => {
+    const tableNumber = document.getElementById("tableNumber").value.trim();
+    const items = Array.from(cart.values());
+    const msg = document.getElementById("msg");
+
+    msg.className = "msg";
+    msg.textContent = "";
+
+    if (!tableNumber) {
+      msg.className = "msg err";
+      msg.textContent = "Please enter a table number.";
+      return;
+    }
+
+    if (items.length === 0) {
+      msg.className = "msg err";
+      msg.textContent = "Your cart is empty.";
+      return;
+    }
+
+    const res = await fetch("/api/orders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tableNumber, items })
+    });
+
+    if (!res.ok) {
+      msg.className = "msg err";
+      msg.textContent = "Failed to place order.";
+      return;
+    }
+
+    const order = await res.json();
+    cart.clear();
+    renderCart();
+
+    msg.className = "msg ok";
+    msg.textContent = `✅ Order placed! Order #${order.id} for Table ${order.tableNumber}`;
+  };
+
+  loadMenu();
+</script>
+</body>
+</html>

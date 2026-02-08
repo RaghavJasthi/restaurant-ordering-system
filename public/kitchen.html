@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Kitchen Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="/styles.css">
+</head>
+
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="brand">
+        <h1>Kitchen Dashboard</h1>
+        <p>Live incoming orders with table number</p>
+      </div>
+      <a class="btn" href="/customer.html">← Customer</a>
+    </div>
+
+    <div id="orders" class="orders"></div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const ordersEl = document.getElementById("orders");
+    let orders = [];
+
+    function badgeHtml(status){
+      return `<span class="badge ${status}"><span class="dot"></span>${status}</span>`;
+    }
+
+    function render() {
+      ordersEl.innerHTML = "";
+
+      for (const o of orders) {
+        const div = document.createElement("div");
+        div.className = "card pad";
+
+        const itemsHtml = o.items
+          .map(it => `<li>${it.name} x${it.qty}</li>`)
+          .join("");
+
+        const createdText = o.createdAt
+          ? new Date(o.createdAt).toLocaleString()
+          : (o.time || "");
+
+        div.innerHTML = `
+          <div class="order-head">
+            <div>
+              <p class="order-title">Order #${o.id} — Table ${o.tableNumber}</p>
+              <div class="order-time">${createdText}</div>
+            </div>
+            ${badgeHtml(o.status)}
+          </div>
+
+          <ul style="margin:10px 0 0 18px;">
+            ${itemsHtml}
+          </ul>
+
+          <div style="margin-top:12px;">
+            <button class="btn warn" data-s="PREPARING">Preparing</button>
+            <button class="btn success" data-s="READY">Ready</button>
+            <button class="btn" data-s="SERVED">Served</button>
+          </div>
+        `;
+
+        div.querySelectorAll("button").forEach(btn => {
+          btn.onclick = () => updateStatus(o.id, btn.dataset.s);
+        });
+
+        ordersEl.appendChild(div);
+      }
+    }
+
+    async function loadExisting() {
+      const res = await fetch("/api/orders");
+      orders = await res.json();
+      render();
+    }
+
+    async function updateStatus(id, status) {
+      await fetch(`/api/orders/${id}`, {
+        method: "PATCH",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ status })
+      });
+      // UI updates via socket event
+    }
+
+    const socket = io();
+
+    socket.on("new-order", (order) => {
+      orders.unshift(order);
+      render();
+    });
+
+    socket.on("update-order", (updated) => {
+      const idx = orders.findIndex(o => o.id === updated.id);
+      if (idx !== -1) orders[idx] = updated;
+      render();
+    });
+
+    loadExisting();
+  </script>
+</body>
+</html>
